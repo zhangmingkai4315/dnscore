@@ -1,2 +1,2 @@
 # dnscore
-Create dns packet and runpack response data using nodejs
+Create dns packet and unpack response data using nodejs

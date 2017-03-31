@@ -1,0 +1,24 @@
+{
+  "name": "dnscore",
+  "version": "0.0.1",
+  "description": "Create dns packet and unpack response data using nodejs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhangmingkai4315/dnscore.git"
+  },
+  "keywords": [
+    "nodejs",
+    "dns",
+    "packet"
+  ],
+  "author": "mike",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/zhangmingkai4315/dnscore/issues"
+  },
+  "homepage": "https://github.com/zhangmingkai4315/dnscore#readme"
+}
