@@ -106,7 +106,26 @@ function dnspacket(buf){
     this.additional = [];
     return this;
 }
-
+/**
+ * @description parse the socket raw buffer and return a parsed dns object.
+ * @param {Buffer} buf
+ * @returns {dnspacket} dns
+ */
+function parse(buf){
+    var dns = new dnspacket(buf);
+    dns.parse_header();
+    dns.parse_question();
+    dns.parse_zones();
+    // delete dns.cache
+    // delete dns.buffer
+    // delete dns.offset
+    return dns
+}
+/**
+ * @description parse the raw buffer and retrive the dns header information.
+ * @param 
+ * @returns
+ */
 dnspacket.prototype.parse_header=function(){
     this.header.id = this.buffer.readUInt16BE(0);
     let val = this.buffer.readUInt16BE(2);
@@ -123,6 +142,12 @@ dnspacket.prototype.parse_header=function(){
     this.additional.length =this.buffer.readUInt16BE(10);
     this.offset = 12;
 }
+
+/**
+ * @description parse the raw buffer and retrive the dns questions information.
+ * @param 
+ * @returns
+ */
 dnspacket.prototype.parse_question=function(){
     var len = this.question.length;
     if(len===0){
@@ -153,66 +178,12 @@ dnspacket.prototype.parse_question=function(){
         this.offset=offset+5
     }
 }
-dnspacket.prototype.parseType=function(type,data){
-    switch(type){
-        case dns_const.QUERY.A:{
-            return this.parse_A(data);
-        }
-        case dns_const.QUERY.NS:{
-            return this.parse_NS(data);
-        }
-        default:
-            return '';
-        }
-}
 
-dnspacket.prototype._getDomainName=function(data){
-            var offset = 0;
-            var beginPoint = this.offset;
-            var domainName=''
-            var readlen= data.readUIntBE(offset,1);
-            var recorder = '';
-            var keyList = [];
-            var cache=[];
-            while(readlen){
-                if(readlen>64){
-                    var _p= data.readUInt16BE(offset);
-                    pointer = _p&0x03fff
-                    recorder=this.cache[pointer]
-                    offset+=2;
-                    cache[this.offset+offset]=recorder;
-                }else{
-                    recorder = data.toString('ascii',offset+1,readlen+offset+1)+'.';
-                    // cache[this.offset+offset]=recorder;
-                    keyList.push(this.offset+offset);
-                    offset=offset+readlen+1;
-                }
-                domainName+=recorder;
-                for(var i of keyList){
-                    cache[i]=(cache[i]||'')+recorder;
-                }
-                if(offset >= data.length){
-                    break;
-                }
-                readlen = data.readUIntBE(offset,1);
-            }
-            this.cache=Object.assign({},this.cache,cache);
-            this.offset = this.offset+offset;
-            return domainName
-}
-
-dnspacket.prototype.parse_A=function(data){
-    var ip = []
-    for(var i=0;i<4;i++){
-        ip.push(data.readUInt8(i))
-    }
-    this.offset+=4;
-    return ip.join('.');
-}
-
-dnspacket.prototype.parse_NS=function(data){
-    return this._getDomainName(data);
-}
+/**
+ * @description parse the raw buffer and retrive the dns (answer,authority,additional) information.
+ * @param 
+ * @returns
+ */
 dnspacket.prototype.parse_zones=function(){
     for(var zone of [this.answer,this.authority,this.additional]){
         var len =zone.length;
@@ -220,6 +191,9 @@ dnspacket.prototype.parse_zones=function(){
             return
         }
         for(var i=0;i<len;i++){
+            if(zone === this.authority){
+                debugger;
+            }
             var domainName=this._getDomainName(this.buffer.slice(this.offset))
             var offset = this.offset;
             var type = this.buffer.readUInt16BE(offset);
@@ -235,30 +209,198 @@ dnspacket.prototype.parse_zones=function(){
         }
     }
 }
-function parse(buf){
-    var dns = new dnspacket(buf);
-    dns.parse_header();
-    dns.parse_question();
-    dns.parse_zones();
-    delete dns.cache
-    return dns
+
+/**
+ * @description parse the raw buffer and domain name string(compressed pointer will be replaced with original string).
+ * @param {Buffer} data
+ * @param {number} max_pointers，you can define with only one pointer limit to use in response packet parse.
+ * @returns {string} domainName
+ */
+dnspacket.prototype._getDomainName=function(data,max_pointers){
+            var offset = 0;
+            var beginPoint = this.offset;
+            var domainName=''
+            var readlen= data.readUIntBE(offset,1);
+            var recorder = '';
+            var keyList = [];
+            var cache=[];
+            var pointerCounter = 0;
+            while(readlen){
+                if(readlen>64){
+                    var _p= data.readUInt16BE(offset);
+                    pointer = _p&0x03fff
+                    recorder=this.cache[pointer]
+                    offset+=2;
+                    cache[this.offset+offset]=recorder;
+                    pointerCounter++;
+
+                }else{
+                    recorder = data.toString('ascii',offset+1,readlen+offset+1)+'.';
+                    // cache[this.offset+offset]=recorder;
+                    keyList.push(this.offset+offset);
+                    offset=offset+readlen+1;
+                }
+                domainName+=recorder;
+                for(var i of keyList){
+                    cache[i]=(cache[i]||'')+recorder;
+                }
+                if(offset >= data.length){
+                    break;
+                }
+                if(max_pointers&&pointerCounter===max_pointers){
+                    break;
+                }
+                readlen = data.readUIntBE(offset,1);
+            }
+            this.cache=Object.assign({},this.cache,cache);
+            this.offset = this.offset+offset;
+            return domainName
+}
+
+/**
+ * @description parse the raw buffer based its type.
+ * @param {string} type , all type will be included in dns_const.QUERY.
+ * @param {Buffer} data the orignal part of buffer. 
+ * @returns {string|object} based the different type will return different object or string
+ * For example: if type === dns_const.QUERY.A  and a ip string will be returned. but if type === dns_const.QUERY.MX, 
+ * a object {preference:10,exchange:'mx.example.com'} will be returned
+ */
+dnspacket.prototype.parseType=function(type,data){
+    switch(type){
+        case dns_const.QUERY.A:{
+            return this.parse_A(data);
+        }
+        case dns_const.QUERY.NS:{
+            return this.parse_NS(data);
+        }
+        case dns_const.QUERY.TXT:{
+            return this.parse_TXT(data);
+        }
+        case dns_const.QUERY.MX:{
+            return this.parse_MX(data);
+        }
+        case dns_const.QUERY.AAAA:{
+            return this.parse_AAAA(data);
+        }
+        case dns_const.QUERY.SOA:{
+            return this.parse_SOA(data);
+        }
+        default:
+            this.offset+=data.length;
+            return data.toString('ascii');
+        }
+}
+
+/**
+ * @description parse the raw buffer return A record.
+ * @param {Buffer} data
+ * @returns {string} a IPv4 Address record
+ */
+dnspacket.prototype.parse_A=function(data){
+    var ip = []
+    for(var i=0;i<4;i++){
+        ip.push(data.readUInt8(i))
+    }
+    this.offset+=4;
+    return ip.join('.');
+}
+/**
+ * @description parse the raw buffer return AAAA(IPv6) record.
+ * @param {Buffer} data
+ * @returns {string} a AAAA record
+ */
+dnspacket.prototype.parse_AAAA = function(data){
+    var ipv6 = []
+    for(var i=0;i<8;i++){
+        ipv6.push(data.readUInt16BE(i*2).toString(16))
+    }
+    this.offset+=16;
+    return ipv6.join(':');
+}
+
+/**
+ * @description parse the raw buffer return SOA record.
+ * @param {Buffer} data
+ * @returns {string} a SOA object
+ */
+dnspacket.prototype.parse_SOA = function(data){
+    var old_pointer = this.offset;
+    var name = this._getDomainName(data,1);
+    var mail = this._getDomainName(data.slice(this.offset-old_pointer),1);
+    var left_data = data.slice(this.offset-old_pointer);
+    this.offset += 20;
+    var obj= {
+        name,
+        mail,
+        serial:left_data.readInt32BE(),
+        refresh:left_data.readInt32BE(4),
+        retry:left_data.readInt32BE(8),
+        expire:left_data.readInt32BE(12),
+        minTTL:left_data.readInt32BE(16)
+    }
+    return obj;
+}
+/**
+ * @description parse the raw buffer return NameServer record.
+ * @param {Buffer} data
+ * @returns {string} a NameServer record
+ */
+dnspacket.prototype.parse_NS=function(data){
+    return this._getDomainName(data);
+}
+/**
+ * @description parse the raw buffer return txt record.
+ * @param {Buffer} data
+ * @returns {string} a txt record
+ */
+dnspacket.prototype.parse_TXT = function(data){
+    this.offset+=data.length;
+    var txtLength = data.readUInt8(0);
+    return data.toString('utf8',1,txtLength+1);
+}
+
+/**
+ * @description parse the raw buffer return MX record.
+ * @param {Buffer} data
+ * @returns {string} a MX record
+ */
+dnspacket.prototype.parse_MX = function(data){
+    this.offset+=2;
+    return  {
+        preference:data.readUInt16BE(0),
+        exchange:this._getDomainName(data.slice(2))
+    }
 }
 
 
+/**
+ * @description parse the raw buffer return MX record.
+ * @param {Buffer} data
+ * @returns {string} a MX record
+ */
+dnspacket.prototype.parse_PTR = function(data){
+    this.offset+=2;
+    return  {
+        preference:data.readUInt16BE(0),
+        exchange:this._getDomainName(data.slice(2))
+    }
+}
 
 
 
 /* example code*/
 var d = new dns({
     question:{
-        name:'baidu.com'
+        name:'google.com',
+        type:dns_const.QUERY.PTR
     }
 });
 const dgram = require('dgram');
 const message = d.getBuffer();
 const client = dgram.createSocket('udp4');
 client.on('message',(msg)=>{
-    console.log(parse(msg));
+    var packet = parse(msg);
+    console.log(packet);
     client.close();
 })
 
