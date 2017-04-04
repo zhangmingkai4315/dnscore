@@ -84,9 +84,10 @@ dns.prototype.getBuffer = function(){
 
 
 /**
- * @description return the parsed dns packet.
+ * A dns packet for hold all the infomation.
+ * @constructor
  * @param {Buffer} buf
- * @returns {Object}  
+ * @returns {Object} this
  */
 
 function dnspacket(buf){
@@ -191,10 +192,7 @@ dnspacket.prototype.parse_zones=function(){
             return
         }
         for(var i=0;i<len;i++){
-            if(zone === this.authority){
-                debugger;
-            }
-            var domainName=this._getDomainName(this.buffer.slice(this.offset))
+            var domainName=this._getDomainName(this.buffer.slice(this.offset),1)
             var offset = this.offset;
             var type = this.buffer.readUInt16BE(offset);
             var classin = this.buffer.readUInt16BE(offset+2);
@@ -284,6 +282,9 @@ dnspacket.prototype.parseType=function(type,data){
         }
         case dns_const.QUERY.SOA:{
             return this.parse_SOA(data);
+        }
+        case dns_const.QUERY.CAA:{
+            return this.parse_CAA(data);
         }
         default:
             this.offset+=data.length;
@@ -385,6 +386,25 @@ dnspacket.prototype.parse_PTR = function(data){
         exchange:this._getDomainName(data.slice(2))
     }
 }
+/**
+ * @description parse the raw buffer return CAA record.
+ * @param {Buffer} data
+ * @returns {string} a CAA record
+ * @see {@link https://tools.ietf.org/html/rfc6844|RFC6844}
+ */
+dnspacket.prototype.parse_CAA = function(data){
+    console.log(data);
+    var flags = data.readIntBE(0,1);
+    var caa_tags_length = data.readIntBE(1,1);
+    var tag = data.slice(2,caa_tags_length+2).toString('utf8');
+    var value = data.slice(caa_tags_length+2).toString('utf8');
+    this.offset+=data.length;
+    return {
+        flags,
+        tag,
+        value,
+    }
+}
 
 
 
@@ -392,7 +412,7 @@ dnspacket.prototype.parse_PTR = function(data){
 var d = new dns({
     question:{
         name:'google.com',
-        type:dns_const.QUERY.PTR
+        type:dns_const.QUERY.CAA
     }
 });
 const dgram = require('dgram');
