@@ -117,9 +117,9 @@ function parse(buf){
     dns.parse_header();
     dns.parse_question();
     dns.parse_zones();
-    // delete dns.cache
-    // delete dns.buffer
-    // delete dns.offset
+    delete dns.cache
+    delete dns.buffer
+    delete dns.offset
     return dns
 }
 /**
@@ -189,7 +189,7 @@ dnspacket.prototype.parse_zones=function(){
     for(var zone of [this.answer,this.authority,this.additional]){
         var len =zone.length;
         if(len===0){
-            return
+            continue
         }
         for(var i=0;i<len;i++){
             var domainName=this._getDomainName(this.buffer.slice(this.offset),1)
@@ -203,7 +203,6 @@ dnspacket.prototype.parse_zones=function(){
             this.offset=offset+10
             zone.shift()
             zone.push({domain:domainName,type:type,class:classin,ttl:ttl,length:length,data:this.parseType(type,data)});
-            
         }
     }
 }
@@ -216,27 +215,26 @@ dnspacket.prototype.parse_zones=function(){
  */
 dnspacket.prototype._getDomainName=function(data,max_pointers){
             var offset = 0;
-            var beginPoint = this.offset;
             var domainName=''
-            var readlen= data.readUIntBE(offset,1);
+            var readlen= data.readUIntBE(offset++,1);
             var recorder = '';
             var keyList = [];
             var cache=[];
             var pointerCounter = 0;
             while(readlen){
                 if(readlen>64){
-                    var _p= data.readUInt16BE(offset);
+                    var _p= data.readUInt16BE(offset-1);
                     pointer = _p&0x03fff
                     recorder=this.cache[pointer]
-                    offset+=2;
+                    offset++;
                     cache[this.offset+offset]=recorder;
                     pointerCounter++;
 
                 }else{
-                    recorder = data.toString('ascii',offset+1,readlen+offset+1)+'.';
+                    recorder = data.toString('ascii',offset,readlen+offset)+'.';
                     // cache[this.offset+offset]=recorder;
-                    keyList.push(this.offset+offset);
-                    offset=offset+readlen+1;
+                    keyList.push(this.offset+offset-1);
+                    offset=offset+readlen;
                 }
                 domainName+=recorder;
                 for(var i of keyList){
@@ -248,9 +246,11 @@ dnspacket.prototype._getDomainName=function(data,max_pointers){
                 if(max_pointers&&pointerCounter===max_pointers){
                     break;
                 }
-                readlen = data.readUIntBE(offset,1);
+                readlen = data.readUIntBE(offset++,1);
             }
+
             this.cache=Object.assign({},this.cache,cache);
+            
             this.offset = this.offset+offset;
             return domainName
 }
@@ -285,6 +285,9 @@ dnspacket.prototype.parseType=function(type,data){
         }
         case dns_const.QUERY.CAA:{
             return this.parse_CAA(data);
+        }
+        case dns_const.QUERY.CNAME:{
+            return this.parse_CNAME(data);
         }
         default:
             this.offset+=data.length;
@@ -379,6 +382,15 @@ dnspacket.prototype.parse_MX = function(data){
  * @param {Buffer} data
  * @returns {string} a MX record
  */
+dnspacket.prototype.parse_CNAME = function(data){
+    return  this._getDomainName(data,1,data.length)
+}
+
+/**
+ * @description parse the raw buffer return MX record.
+ * @param {Buffer} data
+ * @returns {string} a MX record
+ */
 dnspacket.prototype.parse_PTR = function(data){
     this.offset+=2;
     return  {
@@ -406,26 +418,31 @@ dnspacket.prototype.parse_CAA = function(data){
     }
 }
 
+if((module===require.main)){
+    const dgram = require('dgram');
+    var client = dgram.createSocket('udp4');
+    var d = new dns({
+        question:{
+            name:'jsmean.com', //chinatesters.cn
+            type:dns_const.QUERY.TXT
+        }
+    });
+    client.on('message',(msg)=>{
+        var p = parse(msg); 
+        console.log(p)
+        client.close();
+    });
+    client.send(d.getBuffer(), 53, '1.2.4.8', (err) => {
+        if(err){
+            done(err);
+        }
+    });
+}
+
+module.exports = {
+    dnspacket,
+    parse,
+    dns,
+}
 
 
-/* example code*/
-var d = new dns({
-    question:{
-        name:'google.com',
-        type:dns_const.QUERY.CAA
-    }
-});
-const dgram = require('dgram');
-const message = d.getBuffer();
-const client = dgram.createSocket('udp4');
-client.on('message',(msg)=>{
-    var packet = parse(msg);
-    console.log(packet);
-    client.close();
-})
-
-client.send(message, 53, '1.2.4.8', (err) => {
-  if(err){
-      console.log(err);
-  }
-});

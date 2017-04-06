@@ -20,5 +20,9 @@
   "bugs": {
     "url": "https://github.com/zhangmingkai4315/dnscore/issues"
   },
-  "homepage": "https://github.com/zhangmingkai4315/dnscore#readme"
+  "homepage": "https://github.com/zhangmingkai4315/dnscore#readme",
+  "devDependencies": {
+    "expect": "^1.20.2",
+    "mocha": "^3.2.0"
+  }
 }
