@@ -156,6 +156,46 @@ describe('server', function () {
             }
         });
     });
+
+    it('should get NXDOMAIN when the domain not exist and return nxdomain',function(done){
+        var d = new dns_packet.dns({
+            question:{
+                name:'not-exist-jsmean.com', //chinatesters.cn
+                type:dns_const.QUERY.TXT
+            }
+        });
+        client.on('message',(msg)=>{
+            var p = dns_packet.parse(msg); 
+            expect(p.answer.length).toEqual(0); 
+            expect(p.header.rcode).toEqual(dns_const.RCODE.NXDOMAIN); 
+            done();
+        });
+        client.send(d.getBuffer(), 53, DNS_SERVER, (err) => {
+            if(err){
+                done(err);
+            }
+        });
+    });
+    it('should get REFUSED when the queried domain not belong to this auth-server',function(done){
+        var d = new dns_packet.dns({
+            question:{
+                name:'not-exist-jsmean.com', //chinatesters.cn
+                type:dns_const.QUERY.TXT
+            }
+        });
+        client.on('message',(msg)=>{
+            var p = dns_packet.parse(msg); 
+            expect(p.answer.length).toEqual(0); 
+            expect(p.header.rcode).toEqual(dns_const.RCODE.REFUSED); 
+            done();
+        });
+        // cn auth-dns server
+        client.send(d.getBuffer(), 53, 'a.dns.cn', (err) => {
+            if(err){
+                done(err);
+            }
+        });
+    });      
     after(function () {
         client.close();
     });
